@@ -1,0 +1,293 @@
+import java.time.Year
+
+buildscript {
+    repositories {
+        jcenter()
+        maven {
+            name = "Forge"
+            url = "http://files.minecraftforge.net/maven"
+        }
+        maven {
+            name = "Sonatype"
+            url = 'https://oss.sonatype.org/content/groups/public'
+        }
+    }
+    dependencies {
+        classpath 'com.matthewprenger:CurseGradle:1.0-SNAPSHOT'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
+    }
+}
+apply plugin: 'com.matthewprenger.cursegradle'
+apply plugin: 'net.minecraftforge.gradle.forge'
+apply plugin: 'maven'
+//Only edit below this line, the above code adds and enables the nessasary things for Forge to be setup.
+
+def username = "${mod_name}"
+if (project.hasProperty('dev_mail')) {
+    username = "${dev_mail}"
+}
+else if(project.hasProperty('dev_username')) {
+    username = "${project.dev_username}"
+}
+
+version = "${project.mc_version}-${project.mod_version}"
+group = project.maven_group // http://maven.apache.org/guides/mini/guide-naming-conventions.html
+archivesBaseName = project.modid
+
+sourceCompatibility = targetCompatibility = project.jvm_version // Need this here so eclipse task generates correctly.
+compileJava {
+    sourceCompatibility = targetCompatibility = project.jvm_version
+}
+
+repositories {
+    maven {
+        //JEI files
+        url = "http://dvs1.progwml6.com/files/maven"
+    }
+    maven {
+        // location of a maven mirror for JEI files, as a fallback
+        name = "ModMaven"
+        url = "http://modmaven.k-4u.nl"
+    }
+
+    maven {
+        //fallback for almost everything, this is CurseForge :P
+        name = "CurseForge"
+        url = "https://minecraft.curseforge.com/api/maven/"
+    }
+
+    maven {
+        //get dependencies from github
+        name = "JitPack"
+        url = "https://jitpack.io"
+    }
+}
+
+minecraft {
+    version = "${project.mc_version}-${project.forge_version}"
+    if(project.hasProperty('runDir')) {
+        runDir = project.runDir
+    }
+    else if(file('../run').exists()) {
+		runDir = "../run"
+	}
+	else
+	{
+		runDir = "run"
+	}
+
+    mappings = project.forge_mappings
+    makeObfSourceJar = false
+	
+    replace "@VERSION@", project.mod_version
+    def fingerPrintKey = project.hasProperty('public_key') ? findProperty('public_key').replace(":", "").toLowerCase(Locale.ROOT) : "undefined"
+    replace "@FINGERPRINTKEY@", fingerPrintKey
+    replace "@UPDATEJSON@", project.hasProperty('update_json') ? findProperty('update_json') : ""
+    replaceIn project.reference_class
+
+    clientRunArgs += "--username=${username}"
+    if(project.hasProperty('dev_password')) {
+        clientRunArgs += "--password=${dev_password}"
+    }
+
+    //coremod
+    clientJvmArgs += "-Dfml.coreMods.load=com.github.upcraftlp.pistonexpansion.asm.PistonExpansionLoadingPlugin"
+    serverJvmArgs += "-Dfml.coreMods.load=com.github.upcraftlp.pistonexpansion.asm.PistonExpansionLoadingPlugin"
+    
+    //skip the screen to confirm that you want to load a world with missing registry entries
+    serverJvmArgs += "-Dfml.doNotBackup=true"
+    clientJvmArgs += "-Dfml.doNotBackup=true"
+    
+    // skip having to confirm on server
+    serverJvmArgs += "-Dfml.queryResult=confirm"
+    
+    // disable server gui
+    serverRunArgs += "nogui"
+    
+    //skip jansi warnings in the log
+    serverJvmArgs += '-Dlog4j.skipJansi=true'
+    clientJvmArgs += '-Dlog4j.skipJansi=true'
+}
+
+dependencies {
+
+    //JEI at runtime (no build dependency, this is for testing purposes ONLY!)
+    runtime "mezz.jei:jei_${project.mc_version}:${project.jei_version}"
+
+}
+
+compileJava {
+    options.encoding = 'UTF-8'
+}
+
+if (JavaVersion.current().isJava8Compatible()) {
+    allprojects {
+        tasks.withType(Javadoc) {
+            options.addStringOption('Xdoclint:none', '-quiet')
+        }
+    }
+}
+
+if (JavaVersion.current().isJava8Compatible()) {
+    allprojects {
+        tasks.withType(Javadoc) {
+            options.addStringOption('Xdoclint:none', '-quiet')
+        }
+    }
+}
+
+task coreJar(type: Jar) {
+    from(sourceSets.main.output) {
+        include 'com/github/upcraftlp/pistonexpansion/asm/**'
+    }
+    manifest.mainAttributes(
+            "Implementation-Title": project.name + "-core",
+            "Implementation-Version": "${project.mod_version}",
+            "Built-On": "${project.mc_version}-${project.forge_version}",
+            "FMLCorePlugin": "com.github.upcraftlp.pistonexpansion.asm.PistonExpansionLoadingPlugin"
+    )
+    classifier 'core'
+}
+
+reobf {
+    coreJar {
+        mappingType = 'SEARGE'
+    }
+}
+
+task signCoreJar(type: SignJar, dependsOn: reobfCoreJar) {
+    onlyIf {
+        project.hasProperty('sign_keyStore')
+    }
+    keyPass = findProperty('sign_keyPass')
+    keyStore = findProperty('sign_keyStore')
+    storePass = findProperty('sign_storePass')
+    alias = findProperty('sign_alias')
+
+    inputFile = coreJar.archivePath
+    outputFile = coreJar.archivePath
+}
+
+jar {
+    dependsOn signCoreJar
+    exclude 'com/github/upcraftlp/pistonexpansion/asm/**'
+    from(coreJar.archivePath.absolutePath) {
+        include '*'
+    }
+    manifest.mainAttributes(
+            "Implementation-Title": project.name,
+            "Implementation-Version": "${project.mod_version}",
+            "Built-On": "${project.mc_version}-${project.forge_version}",
+            "Maven-Artifact":"${project.group}:${project.archivesBaseName}:${project.version}",
+            "FMLAT": "${project.modid}_at.cfg",
+            "ContainedDeps": coreJar.archivePath.name
+    )
+    classifier '' //this is the main jar!
+}
+
+//sign Jar
+task signJar(type: SignJar, dependsOn: reobfJar) {
+    onlyIf {
+        project.hasProperty('sign_keyStore')
+    }
+    keyPass = findProperty('sign_keyPass')
+    keyStore = findProperty('sign_keyStore')
+    storePass = findProperty('sign_storePass')
+    alias = findProperty('sign_alias')
+
+    inputFile = jar.archivePath
+    outputFile = jar.archivePath
+}
+
+tasks.build.dependsOn signJar
+tasks.curseforge.dependsOn build
+
+artifacts {
+    archives coreJar
+}
+
+def curseRelations = {
+    //optionalLibrary '' //add curseforge-slug here
+}
+
+processResources
+{
+    // this will ensure that this task is redone when the versions change.
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+
+    // replace stuff in mcmod.info, nothing else
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+                
+        // replace version and mcversion
+        expand 'version':project.version, 'mcversion':project.minecraft.version,
+                'mod_name':project.mod_name, 'mod_description':project.mod_description,
+                'url':project.url, 'update_url':project.update_json, 'year': Year.now().getValue()
+    }
+        
+    // copy everything else, thats not the mcmod.info
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'		
+    }
+
+    //ATs
+    rename '(.+_at.cfg)', 'META-INF/$1'
+}
+
+curseforge {
+    if (project.hasProperty('curse_key'))
+        apiKey = project.curse_key
+
+
+    if(project.hasProperty('curse_id')) {
+        project {
+            id = project.curse_id
+            changelogType = 'markdown'
+            changelog = getChangelogText()
+            releaseType = project.release_type
+
+            //TODO uncomment when adding libraries/optional dependencies
+            //relations curseRelations
+
+            addArtifact coreJar
+
+            //addGameVersion '1.12.2' //automatically determined by the CurseGradle plugin
+
+            mainArtifact(jar) {
+                displayName = "${project.mod_name} v${project.mod_version} MC${mc_version}"
+            }
+        }
+    }
+}
+
+String getChangelogText() {
+    def changelogFile = new File(project.projectDir, "changelog.md")
+    String str = ''
+    if(!changelogFile.exists()) {
+        System.out.println("No changelog file found, creating one at \"" + changelogFile.getAbsolutePath() + "\"")
+        changelogFile.createNewFile()
+        return str
+    }
+    String separator = '---'
+    int lineCount = 0
+    boolean done = false
+    changelogFile.eachLine {
+        if (done || it == null) {
+            return
+        }
+        if (lineCount < 3) {
+            lineCount++
+            if (it.startsWith(separator)) {
+                return
+            }
+        }
+        if (!it.startsWith(separator)) {
+            str += "$it" + (lineCount < 3 ? ':\n\n' : '\n')
+            return
+        }
+        done = true // once we go past the first version block, parse no more
+    }
+	str += "\n\n see full changelog [here](${project.changelog_url} \"Changelog\")"
+    return str
+}

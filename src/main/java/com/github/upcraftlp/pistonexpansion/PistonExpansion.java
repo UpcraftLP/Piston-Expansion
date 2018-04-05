@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
         certificateFingerprint = PistonExpansion.FINGERPRINT_KEY,
         dependencies = PistonExpansion.DEPENDENCIES,
         acceptedMinecraftVersions = PistonExpansion.MINECRAFT_VERSION,
+        acceptableRemoteVersions = "*",
         updateJSON = PistonExpansion.UPDATE_JSON
 )
 public class PistonExpansion {
